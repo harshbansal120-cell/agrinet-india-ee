@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgriNet India</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <style>
+    /* CSS Variables & Reset */
+    :root {
+      --bg: #f8faf9;
+      --bg-card: #ffffff;
+      --text-main: #1f2937;
+      --text-muted: #6b7280;
+      --text-light: #9ca3af;
+      --primary: #15803d;     /* Clean agricultural green */
+      --primary-hover: #166534;
+      --border: #e5e7eb;
+      --accent-soil: #9a3412;
+      --accent-water: #0369a1;
+      
+      --health-good: #16a34a;
+      --health-watch: #ca8a04;
+      --health-poor: #dc2626;
+
+      --font-ui: 'Inter', system-ui, sans-serif;
+      --font-display: 'Outfit', sans-serif;
+      
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      background: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input, select {
+      font-family: inherit;
+      outline: none;
+    }
+
+    /* Layout */
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .brand {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .brand h1 {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+    }
+    
+    .brand h1 span { color: var(--primary); }
+    
+    .brand p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .lang-select {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .lang-select:hover { border-color: var(--primary); }
+
+    /* Main Navigation */
+    nav {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      gap: 32px;
+      overflow-x: auto;
+    }
+
+    .nav-btn {
+      background: none;
+      border: none;
+      padding: 16px 0;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      position: relative;
+      white-space: nowrap;
+    }
+
+    .nav-btn:hover { color: var(--text-main); }
+    
+    .nav-btn.active {
+      color: var(--primary);
+      font-weight: 600;
+    }
+    
+    .nav-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--primary);
+      border-radius: 3px 3px 0 0;
+    }
+
+    /* Content Area */
+    main {
+      flex: 1;
+      padding: 32px;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .view-section {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    .view-section.active { display: block; }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Utilities */
+    .grid { display: grid; }
+    .grid-2 { grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+    #field-content .grid-2 { grid-template-columns: minmax(0, 1fr); }
+    #field-content .card { box-shadow: var(--shadow-sm); }
+    .card { border: 1px solid var(--border); }
+    .btn { transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow); }
+    @media (max-width: 720px) {
+      header { padding: 12px 16px; }
+      .header-actions { gap: 8px; }
+      .nav-btn { padding: 10px 12px; }
+    }
+    
+    .grid-stats { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .card-header {
+      margin-bottom: 20px;
+    }
+    
+    .card-title {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    
+    .card-subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-secondary { background: var(--bg); color: var(--text-main); border: 1px solid var(--border); }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--primary); background: #f0fdf4; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    
+    .badge-live { background: #dcfce7; color: #166534; }
+    .badge-model { background: #e0e7ff; color: #3730a3; }
+    .badge-pre { background: #f3f4f6; color: #4b5563; }
+    .badge-demo { background: #ffedd5; color: #9a3412; }
+    .badge-err { background: #fee2e2; color: #991b1b; }
+
+    /* Map */
+    #map {
+      height: 400px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      z-index: 1;
+    }
+
+    /* Health Gauge */
+    .health-widget {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px 0;
+    }
+    
+    .gauge-circle {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 8px solid var(--border);
+      position: relative;
+    }
+    
+    .gauge-circle[data-status="healthy"] { border-color: var(--health-good); }
+    .gauge-circle[data-status="watch"] { border-color: var(--health-watch); }
+    .gauge-circle[data-status="stressed"] { border-color: var(--health-poor); }
+    .gauge-circle[data-status="no_land"] { border-color: #60a5fa; }
+    .gauge-circle[data-status="unavailable"] { border-color: var(--border); }
+    
+    .gauge-val { font-family: var(--font-display); font-size: 42px; font-weight: 700; line-height: 1; }
+    .gauge-max { font-size: 16px; color: var(--text-muted); font-weight: 500; }
+    
+    .health-status {
+      margin-top: 16px;
+      font-size: 18px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Data Points */
+    .data-point {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .data-point:last-child { border-bottom: none; }
+    .diagnosis-point { display: block; padding: 14px 0; }
+    .diagnosis-point .dp-label { display: block; margin-bottom: 6px; }
+    .diagnosis-point .dp-val { display: block; white-space: normal; overflow-wrap: anywhere; line-height: 1.65; }
+    
+    .dp-label { color: var(--text-muted); font-size: 14px; font-weight: 500; }
+    .dp-val { font-size: 15px; font-weight: 600; }
+
+    /* AI Advice */
+    .advice-block {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .recommendation {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    
+    .why-toggle {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    
+    .why-toggle:hover { background: var(--bg); color: var(--text-main); }
+    
+    .why-content {
+      display: none;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--border);
+      font-size: 13px;
+    }
+    
+    .evidence-tag {
+      display: inline-block;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+      margin: 2px;
+      color: var(--text-muted);
+    }
+
+    /* Scenarios */
+    .scenario-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+    }
+    
+    .scenario-btn:hover {
+      border-color: var(--primary);
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .sb-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+    .sb-sub { color: var(--text-muted); font-size: 13px; }
+
+    /* File Upload */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--bg);
+    }
+    
+    .drop-zone:hover { border-color: var(--primary); background: #f0fdf4; }
+    
+    .drop-zone input[type="file"] { display: none; }
+    
+    .preview-img {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: var(--radius-sm);
+      display: none;
+      margin-top: 16px;
+    }
+
+    /* Status Bar */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+
+    /* Network Map Placeholder */
+    .network-viz {
+      height: 400px;
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .node {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      background: var(--primary);
+      border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(21, 128, 61, 0.2);
+    }
+
+    /* Loader */
+    .loader {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(21, 128, 61, 0.3);
+      border-radius: 50%;
+      border-top-color: var(--primary);
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+  </style>
+  <script src="/static/lang.js"></script>
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <header>
+      <div class="brand">
+        <img src="/static/logo.png" alt="AgriNet India Logo" style="height: 95px; display: block; object-fit: contain; object-position: left;">
+        <p data-i18n="appDesc" style="display: none;">Evidence-grounded agricultural intelligence layer</p>
+      </div>
+      <div class="header-actions">
+        <select id="lang" class="lang-select">
+          <option value="en">English</option>
+          <option value="hi" selected>हिन्दी</option>
+          <option value="ta">தமிழ்</option>
+          <option value="te">తెలుగు</option>
+          <option value="bn">বাংলা</option>
+          <option value="mr">मराठी</option>
+          <option value="pa">ਪੰਜਾਬੀ</option>
+          <option value="gu">ગુજરાતી</option>
+          <option value="kn">ಕನ್ನಡ</option>
+          <option value="ml">മലയാളം</option>
+        </select>
+      </div>
+    </header>
+
+    <nav>
+      <button class="nav-btn active" data-target="view-dashboard" data-i18n="navDashboard">Dashboard</button>
+      <button class="nav-btn" data-target="view-field" data-i18n="navField">Field Intelligence</button>
+      <button class="nav-btn" data-target="view-advisory" data-i18n="navAdvisory">AI Advisory</button>
+      <button class="nav-btn" data-target="view-doctor" data-i18n="navDoctor">Crop Doctor</button>
+      <button class="nav-btn" data-target="view-network" data-i18n="navNetwork">Network / API</button>
+    </nav>
+
+    <main>
+      <!-- DASHBOARD -->
+      <section id="view-dashboard" class="view-section active">
+        <div class="status-bar" id="sys-status">
+          <div class="loader" style="width:16px;height:16px;border-width:2px;"></div>
+          <span data-i18n="connecting">Connecting to AgriNet...</span>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title" data-i18n="selectField">Select a Field</h2>
+              <p class="card-subtitle" data-i18n="pinDesc">Pin a location or run a deterministic demo scenario.</p>
+            </div>
+            
+            <div id="map"></div>
+            
+            <div style="margin-top: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <input type="number" id="lat-input" placeholder="Latitude (e.g. 23.35)" step="0.0001" style="padding: 10px; border: 1px solid var(--border); border-radius: 6px; flex: 1; min-width: 120px;">
+              <input type="number" id="lon-input" placeholder="Longitude (e.g. 80.16)" step="0.0001" style="padding: 10px; border: 1px solid var(--border); border-radius: 6px; flex: 1; min-width: 120px;">
+              <input type="text" id="crop-input" placeholder="Crop (optional)" data-i18n-placeholder="cropInput" style="padding: 10px; border: 1px solid var(--border); border-radius: 6px; flex: 1.5; min-width: 150px;">
+              <button class="btn" id="btn-analyze" data-i18n="analyzeBtn" style="flex: 1; min-width: 180px;">Analyze Pinned Field</button>
+            </div>
+            <p id="pin-coords" style="font-size: 13px; color: var(--text-muted); margin-top: 8px;" data-i18n="tapMap">Tap map to place pin.</p>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title" data-i18n="scenariosTitle">Interoperability Pilot Scenarios</h2>
+              <p class="card-subtitle" data-i18n="scenariosDesc">Pre-configured demonstrator fields for state network evaluation.</p>
+            </div>
+            
+            <div class="grid-stats" id="scenario-list">
+              <!-- Populated by JS -->
+              <p class="dp-label" data-i18n="loadingScenarios">Loading scenarios...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FIELD INTELLIGENCE -->
+      <section id="view-field" class="view-section">
+        <div id="field-empty" style="text-align:center; padding: 40px; color: var(--text-muted);">
+          <span data-i18n="fieldEmpty">Select a field on the Dashboard to view intelligence.</span>
+        </div>
+        
+        <div id="field-content" style="display: none;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 24px;">
+            <div>
+              <div style="display:flex; gap: 8px; align-items:center; margin-bottom: 8px;">
+                <span id="f-badge-mode" class="badge badge-model">LIVE</span>
+                <span style="font-family: monospace; font-size: 13px; color: var(--text-muted);" id="f-geohash"></span>
+              </div>
+              <h2 class="card-title" style="font-size: 24px;" id="f-location">Location</h2>
+              <p class="card-subtitle" id="f-crop">Crop</p>
+            </div>
+            <button class="btn" id="btn-gen-adv" data-i18n="genAdvisoryBtn">Generate AI Advisory</button>
+          </div>
+
+          <div class="grid-2">
+            <!-- Health & Context -->
+            <div class="card">
+              <h3 class="card-title" style="text-align: center;" data-i18n="healthTitle">Deterministic Field Health</h3>
+              
+              <div class="health-widget">
+                <div class="gauge-circle" id="f-health-ring" data-status="watch">
+                  <div class="gauge-val" id="f-health-score">--</div>
+                  <div class="gauge-max">/ 100</div>
+                </div>
+                <div class="health-status" id="f-health-status">--</div>
+              </div>
+              
+              <div id="f-health-comps" style="margin-top: 16px;">
+                <!-- Components -->
+              </div>
+            </div>
+
+            <!-- Evidence Bundle Summary -->
+            <div class="card">
+              <h3 class="card-title" data-i18n="evidenceTitle">Evidence Bundle</h3>
+              <p class="card-subtitle" data-i18n="evidenceDesc">Structured deterministic observations.</p>
+              
+              <div style="max-height: 350px; overflow-y: auto; margin-top: 16px; padding-right: 8px;" id="f-evidence-list">
+                <!-- Evidence items -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- AI ADVISORY & REGENERATIVE -->
+      <section id="view-advisory" class="view-section">
+        <div id="adv-empty" style="text-align:center; padding: 40px; color: var(--text-muted);">
+          <span data-i18n="advEmpty">Generate an advisory from the Field Intelligence tab.</span>
+        </div>
+        
+        <div id="adv-loading" style="display:none; text-align:center; padding: 60px;">
+          <div class="loader" style="width:40px;height:40px;margin-bottom:20px;"></div>
+          <h3 style="font-family:var(--font-display);" data-i18n="advLoadingTitle">Gemini Reasoning Engine</h3>
+          <p style="color:var(--text-muted); margin-top:8px;" data-i18n="advLoadingDesc">Synthesizing structured evidence into localized action...</p>
+        </div>
+
+        <div id="adv-content" style="display: none;">
+          <div class="advice-block">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <h2 class="card-title" style="font-size: 22px; color: var(--primary);" data-i18n="localizedAdvisory">Localized Advisory</h2>
+              <button class="btn btn-secondary" id="btn-speak" data-i18n="listen">Listen</button>
+            </div>
+            <p style="font-size: 16px; font-weight: 500; margin-top: 12px;" id="adv-summary"></p>
+            <p style="color: var(--text-muted); margin-top: 8px;" id="adv-condition"></p>
+          </div>
+
+          <div class="grid-2">
+            <div>
+              <h3 class="card-title" style="margin-bottom: 16px;" data-i18n="priorityActions">Priority Actions</h3>
+              <div id="adv-actions"></div>
+              
+              <h3 class="card-title" style="margin: 24px 0 16px; color:#9a3412;" data-i18n="knownRisks">Known Risks</h3>
+              <div id="adv-risks"></div>
+            </div>
+            
+            <div>
+              <h3 class="card-title" style="margin-bottom: 16px; color:var(--primary);" data-i18n="regenPractices">Regenerative Practices</h3>
+              <div id="adv-regen"></div>
+              
+              <div class="card" style="margin-top:24px; padding: 16px;">
+                <h3 class="card-title" style="font-size: 16px;" data-i18n="cropOptions">Climate-Resilient Crop Options</h3>
+                <div id="adv-crops" style="margin-top: 12px;"></div>
+              </div>
+            </div>
+          </div>
+          
+          <div style="margin-top: 24px; padding: 12px; background: #f3f4f6; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-muted);">
+            <strong style="color:var(--text-main);" data-i18n="aiConfidence">AI Confidence Note:</strong> <span id="adv-note"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- CROP DOCTOR -->
+      <section id="view-doctor" class="view-section">
+        <div class="grid-2">
+          <div class="card">
+            <h2 class="card-title" data-i18n="dxTitle">Multimodal Assessment</h2>
+            <p class="card-subtitle" data-i18n="dxDesc">Upload a crop image for Gemini analysis.</p>
+            
+            <div class="drop-zone" id="dx-drop" style="margin-top: 24px;">
+              <div style="font-size: 32px; margin-bottom: 12px;">📸</div>
+              <p style="font-weight: 500;" data-i18n="dropImage">Click or drop image here</p>
+              <input type="file" id="dx-file" accept="image/*" capture="environment">
+            </div>
+            
+            <img id="dx-preview" class="preview-img" src="" alt="Preview">
+            
+            <div style="margin-top: 24px;">
+              <input type="text" id="dx-crop" placeholder="Crop (optional)" data-i18n-placeholder="dxCropInput" style="width:100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px;">
+              <button class="btn" id="btn-dx" style="width:100%;" data-i18n="runDxBtn">Run AI Diagnosis</button>
+            </div>
+          </div>
+          
+          <div class="card">
+            <h2 class="card-title" data-i18n="dxResTitle">Assessment Results</h2>
+            <div id="dx-empty" style="padding: 40px 0; text-align:center; color: var(--text-muted);">
+              <span data-i18n="dxEmpty">Awaiting image upload.</span>
+            </div>
+            
+            <div id="dx-loading" style="display:none; text-align:center; padding: 40px 0;">
+              <div class="loader"></div>
+              <p style="margin-top:12px;" data-i18n="dxLoading">Analyzing image...</p>
+            </div>
+            
+            <div id="dx-res" style="display:none; margin-top: 16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
+                <span id="dx-badge" class="badge"></span>
+                <span style="font-size:13px; color:var(--text-muted);" id="dx-conf"></span>
+              </div>
+              
+              <h3 style="font-size: 18px; font-weight:600; margin-bottom: 8px;" id="dx-issue"></h3>
+              <p style="margin-bottom: 16px;" id="dx-diag"></p>
+              
+              <div class="data-point diagnosis-point"><span class="dp-label" data-i18n="symptoms">Symptoms</span><span class="dp-val" id="dx-sym"></span></div>
+              <div class="data-point diagnosis-point"><span class="dp-label" data-i18n="action">Action</span><span class="dp-val" id="dx-act"></span></div>
+              
+              <div style="margin-top: 16px; padding: 12px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 6px; font-size: 13px;">
+                <strong style="color:#b45309;" data-i18n="expertEscalation">Expert Escalation:</strong> <span id="dx-exp"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- NETWORK & DPG -->
+      <section id="view-network" class="view-section">
+        <div class="grid-2">
+          <div class="card">
+            <h2 class="card-title" data-i18n="netTitle">AgriNet Interoperability Pilot</h2>
+            <p class="card-subtitle" data-i18n="netDesc">One intelligence schema. Configurable state adapters.</p>
+            
+                        <div class="network-viz" style="margin-top: 24px; padding: 32px; flex-direction: column; justify-content: flex-start; align-items: stretch; height: auto; min-height: 300px; background: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2220%22 height=%2220%22><circle cx=%222%22 cy=%222%22 r=%221%22 fill=%22%23e5e7eb%22/></svg>');">
+               
+               <div style="background:rgba(255,255,255,0.95); padding: 20px; border-radius: 8px; border:1px solid var(--border); margin-bottom: 24px; text-align: center; font-weight: 500; font-size: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+                   <span style="color:var(--text-main)">State Data</span> <span style="color:#d1d5db">➔</span> 
+                   <span style="color:var(--primary)">AgriNet Common Schema</span> <span style="color:#d1d5db">➔</span> 
+                   <span style="color:var(--text-main)">AI Intelligence</span> <span style="color:#d1d5db">➔</span> 
+                   <span style="color:#b45309">Localized Advisory</span>
+               </div>
+               
+               <div style="background:rgba(255,255,255,0.95); padding: 12px; border-radius: 8px; border:1px solid var(--border); overflow-x: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+                   <table style="width:100%; border-collapse: collapse; font-size:13px; text-align: left;">
+                     <thead>
+                       <tr style="border-bottom: 1px solid var(--border); color: #666;">
+                         <th style="padding: 10px;">State</th>
+                         <th style="padding: 10px;">Demo / Pilot Field</th>
+                         <th style="padding: 10px;">Crop</th>
+                         <th style="padding: 10px;">Intelligence</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       <tr style="border-bottom: 1px solid #f3f4f6;">
+                         <td style="padding: 10px; font-weight: 500; display: flex; align-items: center; gap: 6px;"><div style="width:6px; height:6px; border-radius:50%; background:#10b981;"></div> Uttar Pradesh</td>
+                         <td style="padding: 10px; color: #444;">Agra</td>
+                         <td style="padding: 10px;"><span class="badge badge-demo" style="background:#f0ebd8; color:#786620; border:1px solid #dcd4b8">Wheat</span></td>
+                         <td style="padding: 10px; color: #666;">Satellite + Soil + Weather + Gemini</td>
+                       </tr>
+                       <tr style="border-bottom: 1px solid #f3f4f6;">
+                         <td style="padding: 10px; font-weight: 500; display: flex; align-items: center; gap: 6px;"><div style="width:6px; height:6px; border-radius:50%; background:#10b981;"></div> Punjab</td>
+                         <td style="padding: 10px; color: #444;">Ludhiana</td>
+                         <td style="padding: 10px;"><span class="badge badge-demo" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd">Rice</span></td>
+                         <td style="padding: 10px; color: #666;">Satellite + Soil + Weather + Gemini</td>
+                       </tr>
+                       <tr style="border-bottom: 1px solid #f3f4f6;">
+                         <td style="padding: 10px; font-weight: 500; display: flex; align-items: center; gap: 6px;"><div style="width:6px; height:6px; border-radius:50%; background:#10b981;"></div> Maharashtra</td>
+                         <td style="padding: 10px; color: #444;">Nashik</td>
+                         <td style="padding: 10px;"><span class="badge badge-demo">Cotton</span></td>
+                         <td style="padding: 10px; color: #666;">Satellite + Soil + Weather + Gemini</td>
+                       </tr>
+                       <tr style="border-bottom: 1px solid #f3f4f6;">
+                         <td style="padding: 10px; font-weight: 500; display: flex; align-items: center; gap: 6px;"><div style="width:6px; height:6px; border-radius:50%; background:#10b981;"></div> Andhra Pradesh</td>
+                         <td style="padding: 10px; color: #444;">Guntur</td>
+                         <td style="padding: 10px;"><span class="badge badge-demo" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd">Rice</span></td>
+                         <td style="padding: 10px; color: #666;">Satellite + Soil + Weather + Gemini</td>
+                       </tr>
+                       <tr style="border-bottom: 1px solid #f3f4f6;">
+                         <td style="padding: 10px; font-weight: 500; display: flex; align-items: center; gap: 6px;"><div style="width:6px; height:6px; border-radius:50%; background:#10b981;"></div> Tamil Nadu</td>
+                         <td style="padding: 10px; color: #444;">Villupuram</td>
+                         <td style="padding: 10px;"><span class="badge badge-demo" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a">Groundnut</span></td>
+                         <td style="padding: 10px; color: #666;">Satellite + Soil + Weather + Gemini</td>
+                       </tr>
+                       <tr>
+                         <td style="padding: 10px; font-weight: 500; display: flex; align-items: center; gap: 6px;"><div style="width:6px; height:6px; border-radius:50%; background:#10b981;"></div> Odisha</td>
+                         <td style="padding: 10px; color: #444;">Sambalpur</td>
+                         <td style="padding: 10px;"><span class="badge badge-demo" style="background:#ffedd5; color:#c2410c; border:1px solid #fed7aa">Sorghum</span></td>
+                         <td style="padding: 10px; color: #666;">Satellite + Soil + Weather + Gemini</td>
+                       </tr>
+                     </tbody>
+                   </table>
+               </div>
+            </div></div>
+          </div>
+          
+          <div class="card">
+            <h2 class="card-title" data-i18n="apiTitle">DPG API Contract (v1)</h2>
+            <p class="card-subtitle" data-i18n="apiDesc">Exposed endpoints for state-level integration.</p>
+            
+            <div style="margin-top: 16px;">
+              <pre style="background:var(--bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); font-family:monospace; font-size:12px; overflow-x:auto; line-height: 1.6;" id="manifest-out">Loading manifest...</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/new_script.js"></script>
+
+</body>
+</html>

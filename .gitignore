@@ -1,0 +1,38 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.vscode/
+.idea/
+
+.DS_Store
+Thumbs.db
+
+*.log
+
+.env
+.env.*
+!.env.example
+
+.git/
+
+node_modules/
+
+# Ignore local caches and debug outputs
+test_results.txt
+*tmp*
+*.cache
+
+# Important: The following files are required for production, DO NOT ignore them:
+# !data/lookup.parquet
+# !data/classifier_emb.joblib
+# !data/planet_mae_encoder_32.pt
+# !data/planet_scaler_32.joblib

@@ -1,0 +1,31 @@
+{
+  "_note": "Planet-dataset labels are Dynamic World land-cover ids (per the SPEAR repo), so both paths share one scheme.",
+  "planet_classes": {
+    "0": "water",
+    "1": "trees",
+    "2": "grass",
+    "3": "flooded_vegetation",
+    "4": "crops",
+    "5": "shrub_scrub",
+    "6": "built",
+    "7": "bare",
+    "8": "snow_ice"
+  },
+  "cropland_ids": [
+    4
+  ],
+  "dynamic_world": {
+    "0": "water",
+    "1": "trees",
+    "2": "grass",
+    "3": "flooded_vegetation",
+    "4": "crops",
+    "5": "shrub_scrub",
+    "6": "built",
+    "7": "bare",
+    "8": "snow_ice"
+  },
+  "dynamic_world_cropland_ids": [
+    4
+  ]
+}
