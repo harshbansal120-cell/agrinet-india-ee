@@ -164,7 +164,100 @@ def ee_config_status() -> dict:
             "It does not guarantee the service account can reach the Earth Engine API."
         ),
     }
+EE_CONNECTIVITY_CACHE_TTL_S = 5 * 60  # cache result for 5 minutes
+_ee_connectivity_cache: dict = {}
+_ee_connectivity_lock = threading.Lock()
+# Hold the in‑flight future so concurrent requests share the same probe.
+_ee_connectivity_future: object = None
 
+def _run_connectivity_check() -> dict:
+    """Execute a minimal EE request to verify remote API availability.
+
+    Returns a dict with ``reachable`` (bool) and an ``error`` code when
+    unavailable. The function extracts HTTP status codes when present, but
+    never returns raw exception messages or credential data.
+    """
+    try:
+        img = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED').limit(1).first()
+        img.getInfo()
+        return {"reachable": True}
+    except Exception as exc:
+        # Attempt to extract an HTTP status code from known exception shapes.
+        status = None
+        # google.api_core.exceptions.HttpError-like
+        if hasattr(exc, "response") and hasattr(exc.response, "status_code"):
+            status = exc.response.status_code
+        # ee exception may expose a 'code' attribute.
+        elif hasattr(exc, "code"):
+            status = getattr(exc, "code")
+        # Fallback: inspect args for a dict with 'status_code'.
+        elif isinstance(exc.args, tuple) and len(exc.args) > 0 and isinstance(exc.args[0], dict):
+            status = exc.args[0].get("status_code")
+        # Map status to a sanitized error identifier.
+        if status == 403:
+            err = "forbidden"
+        elif status == 401:
+            err = "unauthorized"
+        elif status is not None:
+            err = f"http_{status}"
+        else:
+            err = "request_failed"
+        return {"reachable": False, "error": err}
+
+
+def ee_live_status(timeout: float = None) -> dict:
+    global _ee_connectivity_future
+    """Return cached remote EE connectivity status.
+
+    Implements a single‑flight probe: concurrent calls will share the same in‑flight
+    future rather than spawning multiple network requests. The result is cached for
+    ``EE_CONNECTIVITY_CACHE_TTL_S`` seconds.
+    """
+    now = time.monotonic()
+    # Fast path: fresh cache.
+    with _ee_connectivity_lock:
+        entry = _ee_connectivity_cache.get("status")
+        if entry and now - entry[0] < EE_CONNECTIVITY_CACHE_TTL_S:
+            return entry[1]
+        # Re‑use existing in‑flight future if present.
+        future = _ee_connectivity_future
+        if future is None:
+            if timeout is None:
+                timeout = EE_TIMEOUT_S
+            if not _ee():
+                result = {"reachable": False, "error": "init_failed"}
+                _ee_connectivity_cache["status"] = (now, result)
+                return result
+            # Start a new probe.
+            future = _ee_pool.submit(_run_connectivity_check)
+            _ee_connectivity_future = future
+    try:
+        # Wait for the probe respecting the timeout.
+        if timeout is None:
+            timeout = EE_TIMEOUT_S
+        result = future.result(timeout=timeout)
+    except FutureTimeout:
+        result = {"reachable": False, "error": "timeout"}
+        # Cancel the underlying request if possible to avoid orphaned work.
+        try:
+            future.cancel()
+        except Exception:
+            pass
+    # Store result and clear the in‑flight marker.
+    with _ee_connectivity_lock:
+        _ee_connectivity_cache["status"] = (now, result)
+        _ee_connectivity_future = None
+    return result
+
+def ee_health() -> dict:
+    """Combined EE health information for the ``/health/earth-engine`` endpoint.
+
+    Returns the static configuration snapshot (via ``ee_config_status``) plus the
+    result of ``ee_live_status`` under the ``live`` key. Errors are sanitized.
+    """
+    status = ee_config_status()
+    status["live"] = ee_live_status()
+    return status
 
 def _s2_clear(img):
     """Mask clouds/shadows: keep vegetation, bare soil, water and unclassified pixels from the S2 scene classification."""

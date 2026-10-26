@@ -321,16 +321,13 @@ def health(): return {"ok": True, "ai_configured": ai.is_available()}
 
 @app.get("/health/earth-engine", tags=["health"])
 def ee_health():
-    """Lightweight Earth Engine configuration status.
+    """Lightweight Earth Engine health endpoint.
 
-    Returns the SDK and configuration state without contacting Earth Engine
-    servers, exposing credentials, or running satellite analysis.
-
-    ``sdk_initialized`` indicates that ``ee.Initialize()`` completed
-    successfully. It does **not** prove that the service account can reach
-    the remote Earth Engine API — only a real EE request can confirm that.
+    Returns both static SDK/configuration information and a live connectivity
+    check via ``geo.ee_health()``. No credential values or exception traces are
+    exposed.
     """
-    return geo.ee_config_status()
+    return geo.ee_health()
 
 
 @app.post("/api/analyze")
