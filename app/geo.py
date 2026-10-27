@@ -85,51 +85,100 @@ _EE_RETRY_S = 300
 _ee_lock = threading.Lock()
 def _ee():
     """Initialise Earth Engine once; a failed init is retried after a cool-down instead of disabling EE for good.
-    Supports service‑account authentication via EE_SERVICE_ACCOUNT_JSON and EE_PROJECT_ID.
-    Falls back to project‑only init for local development when no service account is provided.
+    Supports service-account authentication via EE_SERVICE_ACCOUNT_JSON and EE_PROJECT_ID.
+    Falls back to project-only init for local development when no service account is provided.
     """
     global _ee_ok, _ee_failed_at
     with _ee_lock:
-        # Reset after cool‑down if previous init failed
+        # Reset after cooldown so a transient failure can be retried.
         if _ee_ok is False and time.monotonic() - _ee_failed_at > _EE_RETRY_S:
             _ee_ok = None
+
+        if _ee_ok is True:
+            return True
+
         if _ee_ok is None:
             try:
                 # Use the module-level ee (which may be a mock in tests)
                 if ee is None:
                     raise RuntimeError("earthengine-api library is not available")
-                # Prefer explicit Render/production variables
+
                 project_id = os.getenv("EE_PROJECT_ID") or os.getenv("EE_PROJECT")
+                if not project_id:
+                    raise RuntimeError("EE_PROJECT_ID or EE_PROJECT environment variable is required")
+
                 sa_json_str = os.getenv("EE_SERVICE_ACCOUNT_JSON")
+                credentials = None
+
                 if sa_json_str:
-                    # Parse and minimally validate the service‑account payload
+                    # Parse and minimally validate the service-account payload.
                     try:
                         sa_json = json.loads(sa_json_str)
                         required_keys = {"type", "project_id", "private_key", "client_email"}
                         if not required_keys.issubset(sa_json):
                             raise ValueError("Service account JSON missing required fields")
                     except Exception as exc:
-                        raise RuntimeError("EE_SERVICE_ACCOUNT_JSON is malformed or invalid") from exc
-                    credentials = ee.ServiceAccountCredentials(email=None, key_data=json.dumps(sa_json))
+                        raise ValueError("malformed_credentials") from exc
+
+                    # Require ServiceAccountCredentials to exist and be callable.
+                    if not hasattr(ee, "ServiceAccountCredentials"):
+                        raise ValueError("malformed_credentials")
+                    sc = getattr(ee, "ServiceAccountCredentials")
+                    if not callable(sc):
+                        raise ValueError("malformed_credentials")
+
+                    # Call exactly once with the required signature.
+                    try:
+                        credentials = sc(email=None, key_data=json.dumps(sa_json))
+                        if credentials is None:
+                            raise ValueError("malformed_credentials")
+                    except Exception as exc:
+                        raise ValueError("malformed_credentials") from exc
+
+                # Initialize Earth Engine.
+                if credentials is not None:
                     ee.Initialize(credentials, project=project_id)
                 else:
-                    if not project_id:
-                        raise RuntimeError("EE_PROJECT_ID environment variable is required for Earth Engine initialization")
                     ee.Initialize(project=project_id)
+
                 _ee_ok = True
+
             except Exception as e:
-                # Log a generic warning; avoid leaking credential details.
-                log.warning("Earth Engine unavailable")
-                _ee_ok = False
-                _ee_failed_at = time.monotonic()
-                # Re‑raise only for missing configuration (project env) – all other RuntimeErrors are treated as init failures.
+                # Classify into a sanitized category.
+                err_category = "unknown"
+                is_missing_config = False
                 if isinstance(e, RuntimeError):
                     msg = str(e).lower()
-                    if "environment variable" in msg or "required" in msg:
-                        raise
+                    if "environment variable" in msg or "required" in msg or "library is not available" in msg:
+                        err_category = "missing_configuration"
+                        is_missing_config = True
+                    else:
+                        err_category = "init_error"
+                elif isinstance(e, ValueError):
+                    err_category = "malformed_credentials"
+                elif hasattr(e, "code"):
+                    code = getattr(e, "code", None)
+                    if code == 401:
+                        err_category = "unauthorized"
+                    elif code == 403:
+                        err_category = "forbidden"
+                    else:
+                        err_category = "init_error"
+                else:
+                    err_category = "init_error"
 
+                log.error("EE initialization failed: %s (%s)", err_category, e.__class__.__name__)
+                _ee_ok = False
+                _ee_failed_at = time.monotonic()
+
+                if is_missing_config:
+                    raise RuntimeError(str(e)) from e
+                if err_category in ("unauthorized", "forbidden"):
+                    raise
+                return False
 
         return _ee_ok
+
 
 def warm_up():
     """Initialise Earth Engine and the Planet lookup ahead of the first request (called from app startup)."""

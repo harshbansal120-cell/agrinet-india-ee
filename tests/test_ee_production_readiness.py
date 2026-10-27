@@ -83,7 +83,7 @@ class TestEEInit(unittest.TestCase):
     def test_malformed_sa_json_missing_fields(self, mock_ee):
         """ee._ee() must return False when SA JSON lacks required keys, without raising."""
         os.environ["EE_PROJECT_ID"] = "proj"
-        incomplete = {"type": "service_account"}  # missing project_id, private_key, client_email
+        incomplete = {"type": "service_account"}  # missing required fields
         os.environ["EE_SERVICE_ACCOUNT_JSON"] = json.dumps(incomplete)
 
         from app import geo
