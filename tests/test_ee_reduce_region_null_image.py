@@ -317,7 +317,7 @@ def test_analyze_land_water_result_from_modis(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_proof_masked_pixels_produce_null_without_unmask():
-        """Mocked illustration of the EE bug where `reduceRegion` returns an empty dict.
+    """Mocked illustration of the EE bug where `reduceRegion` returns an empty dict.
     The test demonstrates that, without `.unmask(-1)`, a fully‑masked image could
     lead to a null value being propagated in the EE expression graph (simulated
     here)."""

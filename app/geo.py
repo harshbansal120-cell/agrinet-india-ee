@@ -333,14 +333,26 @@ def ee_analysis(lat, lon, days=180):
     # .unmask(-1) fills masked pixels (tile boundaries, unclassified) with -1 so that
     # reduceRegion() always receives a valid image and a missing pixel yields -1
     # (treated as "no water data") rather than propagating null.
-    # No filterBounds needed: the global archive always has at least one image.
-    water_mask = (ee.ImageCollection("MODIS/061/MOD44W")
-                  .select("water_mask")
-                  .sort("system:time_start", False)
-                  .first()
-                  .unmask(-1)
-                  .reduceRegion(ee.Reducer.first(), pt, 250)
-                  .get("water_mask", -1))
+    modis = (
+        ee.ImageCollection("MODIS/006/MOD44W")
+        .select("water_mask")
+        .sort("system:time_start", False)
+    )
+    has_modis = modis.size().gt(0)
+
+    water_mask = ee.Algorithms.If(
+        has_modis,
+        modis.first()
+        .unmask(-1)
+        .reduceRegion(
+            ee.Reducer.first(),
+            pt,
+            250,
+            maxPixels=1_000_000,
+        )
+        .get("water_mask", -1),
+        -1,
+    )
 
     s2 = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED").filterBounds(pt).filterDate(str(start), str(end))
           .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 60))
