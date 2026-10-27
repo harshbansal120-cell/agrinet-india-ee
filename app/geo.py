@@ -329,9 +329,19 @@ def ee_analysis(lat, lon, days=180):
                                    .reduceRegion(ee.Reducer.first(), pt, 10).get("label", -1), -1)
     confidence_value = ee.Algorithms.If(has_dw, dw.select(probability_bands).mean().reduce(ee.Reducer.max())
                                         .reduceRegion(ee.Reducer.first(), pt, 10).get("max", -1), -1)
-    # MODIS land/water mask also covers open sea and coasts, where Dynamic World has no scenes.
-    water_mask = (ee.ImageCollection("MODIS/061/MOD44W").select("water_mask").sort("system:time_start", False).first()
-                  .reduceRegion(ee.Reducer.first(), pt, 250).get("water_mask", -1))
+    # MODIS land/water mask: global yearly product (2000-present), no spatial gaps.
+    # .unmask(-1) fills masked pixels (tile boundaries, unclassified) with -1 so that
+    # reduceRegion() always receives a valid image and a missing pixel yields -1
+    # (treated as "no water data") rather than propagating null.
+    # No filterBounds needed: the global archive always has at least one image.
+    water_mask = (ee.ImageCollection("MODIS/061/MOD44W")
+                  .select("water_mask")
+                  .sort("system:time_start", False)
+                  .first()
+                  .unmask(-1)
+                  .reduceRegion(ee.Reducer.first(), pt, 250)
+                  .get("water_mask", -1))
+
     s2 = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED").filterBounds(pt).filterDate(str(start), str(end))
           .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 60))
           .sort("system:time_start", False).limit(20).map(_s2_clear))
@@ -378,11 +388,17 @@ def _ee_job(key, lat, lon):
     try:
         res = ee_analysis(lat, lon)
     except Exception as e:
-        log.warning("EE query failed: %s", e); res = None
+        # Log the exception class and a sanitized excerpt (no credentials, no raw JSON).
+        # This indicates an overall EE query failure; we do not claim to know which reduceRegion call failed.
+        exc_cls = type(e).__name__
+        msg = str(e)[:200]  # truncate; EE messages are safe to log (no credentials)
+        log.warning("EE query failed (overall) for geohash=%s exc=%s msg=%s", key, exc_cls, msg)
+        res = None
     with _ee_cache_lock:
         _ee_inflight.pop(key, None)
         if res is not None:
             _ee_cache[key] = (time.monotonic(), res)
+
             if len(_ee_cache) > 512: _ee_cache.pop(next(iter(_ee_cache)))
     return res
 
